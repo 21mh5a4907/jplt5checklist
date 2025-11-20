@@ -1,0 +1,484 @@
+/**  SAVE THIS FILE AS: App.jsx  **/
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  CheckSquare, Square, Loader2, User, RefreshCw, XCircle,
+  BookOpen, ListChecks, ChevronRight, ChevronLeft, RotateCw 
+} from 'lucide-react';
+
+// --- FIREBASE IMPORTS ---
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, doc, setDoc, onSnapshot, runTransaction 
+} from 'firebase/firestore';
+
+
+// --------------------------------------------------------
+//  Global env variables (from your hosting environment)
+// --------------------------------------------------------
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined'
+  ? JSON.parse(__firebase_config)
+  : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined'
+  ? __initial_auth_token
+  : null;
+
+
+// --------------------------------------------------------
+// 🔥 Helper: Generate Date Ranges Dynamically
+// --------------------------------------------------------
+function generateDateRange(startOffset, endOffset) {
+  const today = new Date();
+  const start = new Date(today);
+  const end = new Date(today);
+
+  start.setDate(today.getDate() + startOffset);
+  end.setDate(today.getDate() + endOffset);
+
+  const format = (date) =>
+    date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  return `${format(start)} – ${format(end)}`;
+}
+
+// --------------------------------------------------------
+// 📌 INITIAL CHECKLIST (Now includes dynamic dates!)
+// --------------------------------------------------------
+const initialChecklist = [
+  {
+    day: `Day 1–2 (${generateDateRange(0, 1)})`,
+    title: 'Hiragana & Katakana + Basic Vocab',
+    tasks: [
+      { text: 'Read all Hiragana aloud', isCompleted: false },
+      { text: 'Read all Katakana aloud', isCompleted: false },
+      { text: 'Learn 50 basic words', isCompleted: false },
+      { text: 'Listen to simple greetings', isCompleted: false },
+      { text: 'Learn 5 basic Kanji', isCompleted: false },
+    ],
+  },
+  {
+    day: `Day 3–5 (${generateDateRange(2, 4)})`,
+    title: 'Basic Grammar + Vocab Expansion',
+    tasks: [
+      { text: 'Grammar: は, が, を, に, へ, で', isCompleted: false },
+      { text: 'Verb forms: ます / ました', isCompleted: false },
+      { text: 'Learn common verbs', isCompleted: false },
+      { text: 'Learn 5 more Kanji', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 6–7 (${generateDateRange(5, 6)})`,
+    title: 'Adjectives + More Vocab',
+    tasks: [
+      { text: 'Understand い/な adjectives', isCompleted: false },
+      { text: 'Learn basic adjectives', isCompleted: false },
+      { text: 'Read short sentences', isCompleted: false },
+      { text: 'Learn Kanji: 日 月 火 水 木', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 8–9 (${generateDateRange(7, 8)})`,
+    title: 'Numbers, Time, Family',
+    tasks: [
+      { text: 'Numbers, days, months', isCompleted: false },
+      { text: 'Grammar: あります / います', isCompleted: false },
+      { text: 'Read dialogues', isCompleted: false },
+      { text: 'Learn Kanji: 金 土 年 時 分', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 10–12 (${generateDateRange(9, 11)})`,
+    title: 'Reading & Listening Practice',
+    tasks: [
+      { text: 'Read menus, passages', isCompleted: false },
+      { text: 'Vocabulary review', isCompleted: false },
+      { text: 'Listening practice', isCompleted: false },
+      { text: 'Learn final Kanji set', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 13–15 (${generateDateRange(12, 14)})`,
+    title: 'Mixed Practice + Mock Tests',
+    tasks: [
+      { text: 'Grammar review', isCompleted: false },
+      { text: 'Reading exercises', isCompleted: false },
+      { text: 'Mock listening test', isCompleted: false },
+      { text: 'Kanji recognition', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 16–17 (${generateDateRange(15, 16)})`,
+    title: 'Full Practice Test',
+    tasks: [
+      { text: 'Complete full mock test', isCompleted: false },
+      { text: 'Review mistakes', isCompleted: false },
+      { text: 'Flashcards practice', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 18–19 (${generateDateRange(17, 18)})`,
+    title: 'Intense Revision',
+    tasks: [
+      { text: 'Grammar review', isCompleted: false },
+      { text: 'Reading practice', isCompleted: false },
+      { text: 'Mock listening', isCompleted: false },
+      { text: 'Kanji & vocab revision', isCompleted: false },
+    ],
+  },
+
+  {
+    day: `Day 20 (Final Day – ${generateDateRange(19, 19)})`,
+    title: 'Quick Final Revision',
+    tasks: [
+      { text: 'Flashcards', isCompleted: false },
+      { text: 'Grammar key rules', isCompleted: false },
+      { text: 'Listening practice', isCompleted: false },
+      { text: 'Short reading', isCompleted: false },
+    ],
+  },
+];
+
+
+// --------------------------------------------------------
+// 🔤 Vocabulary for Flashcards (unchanged)
+// --------------------------------------------------------
+const n5Vocab = [
+  { japanese: "こんにちは", meaning: "Hello" },
+  { japanese: "ありがとう", meaning: "Thank you" },
+  { japanese: "さようなら", meaning: "Goodbye" },
+  { japanese: "せんせい", meaning: "Teacher" },
+  { japanese: "がくせい", meaning: "Student" },
+  { japanese: "ほん", meaning: "Book" },
+  { japanese: "みず", meaning: "Water" },
+  { japanese: "たべる", meaning: "To eat" },
+  { japanese: "のむ", meaning: "To drink" },
+  { japanese: "いく", meaning: "To go" },
+];
+
+
+// --------------------------------------------------------
+// 🔄 Firestore Retry Helper
+// --------------------------------------------------------
+async function runWithRetry(fn, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (
+        e.code === "unavailable" ||
+        e.code === "internal" ||
+        e.code === "resource-exhausted"
+      ) {
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
+
+// --------------------------------------------------------
+// 🎴 FLASHCARD COMPONENT
+// --------------------------------------------------------
+const Flashcard = () => {
+  const [cards, setCards] = useState(n5Vocab.sort(() => 0.5 - Math.random()));
+  const [index, setIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  const card = cards[index];
+
+  return (
+    <div className="p-6 bg-white rounded-xl shadow-lg">
+      <h2 className="text-2xl font-bold text-indigo-700 mb-6 flex items-center">
+        <BookOpen className="mr-2" /> N5 Flashcards
+      </h2>
+
+      {/* Card */}
+      <div
+        className="w-full h-72 bg-indigo-500 text-white rounded-2xl flex items-center justify-center text-5xl font-bold cursor-pointer"
+        onClick={() => setIsFlipped(!isFlipped)}
+      >
+        {isFlipped ? card.meaning : card.japanese}
+      </div>
+
+      {/* Controls */}
+      <div className="flex justify-between mt-6">
+        <button
+          onClick={() => setIndex((i) => (i - 1 + cards.length) % cards.length)}
+          className="p-3 bg-indigo-200 rounded-full"
+        >
+          <ChevronLeft />
+        </button>
+
+        <button
+          onClick={() => {
+            setCards([...cards].sort(() => 0.5 - Math.random()));
+            setIndex(0);
+            setIsFlipped(false);
+          }}
+          className="p-3 bg-yellow-200 rounded-full"
+        >
+          <RotateCw />
+        </button>
+
+        <button
+          onClick={() => setIndex((i) => (i + 1) % cards.length)}
+          className="p-3 bg-indigo-500 text-white rounded-full"
+        >
+          <ChevronRight />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+
+// --------------------------------------------------------
+// 📋 CHECKLIST VIEW COMPONENT
+// --------------------------------------------------------
+const ChecklistView = ({
+  checklist,
+  total,
+  completed,
+  percent,
+  toggleTask,
+  resetChecklist,
+  userId,
+}) => (
+  <>
+    <header className="mb-8 border-b pb-4">
+      <h1 className="text-4xl font-bold text-gray-800">JLPT N5 Study Checklist</h1>
+
+      <div className="text-sm text-gray-500 flex justify-between mt-2">
+        <span>User ID: {userId}</span>
+
+        <button
+          onClick={resetChecklist}
+          className="text-red-500 flex items-center"
+        >
+          <RefreshCw className="mr-1" /> Reset
+        </button>
+      </div>
+    </header>
+
+    {/* Progress Bar */}
+    <div className="mb-6">
+      <p className="font-semibold text-indigo-600">
+        {completed} / {total} tasks completed
+      </p>
+      <div className="w-full bg-gray-200 rounded-full h-3">
+        <div
+          className="bg-indigo-500 h-3 rounded-full"
+          style={{ width: percent + "%" }}
+        ></div>
+      </div>
+    </div>
+
+    {/* Checklist Items */}
+    {checklist.map((day, i) => (
+      <div key={i} className="bg-white p-5 mb-4 rounded-xl shadow">
+        <h3 className="text-xl font-bold text-indigo-600">{day.day}</h3>
+        <p className="text-gray-700 mb-3">{day.title}</p>
+
+        {day.tasks.map((task, j) => (
+          <div
+            key={j}
+            className="flex items-center cursor-pointer mb-2"
+            onClick={() => toggleTask(i, j)}
+          >
+            {task.isCompleted ? (
+              <CheckSquare className="text-green-500" />
+            ) : (
+              <Square className="text-gray-400" />
+            )}
+            <span
+              className={
+                "ml-3 " +
+                (task.isCompleted ? "line-through text-gray-500" : "text-gray-800")
+              }
+            >
+              {task.text}
+            </span>
+          </div>
+        ))}
+      </div>
+    ))}
+  </>
+);
+
+
+// --------------------------------------------------------
+// MAIN APP COMPONENT
+// --------------------------------------------------------
+function App() {
+  const [checklist, setChecklist] = useState(initialChecklist);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState(null);
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [view, setView] = useState("checklist");
+
+  // ------------------------------
+  // Firebase Init
+  // ------------------------------
+  useEffect(() => {
+    if (!firebaseConfig.apiKey) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      const firestore = getFirestore(app);
+      const userAuth = getAuth(app);
+
+      setDb(firestore);
+      setAuth(userAuth);
+
+      const authenticate = async () => {
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(userAuth, initialAuthToken);
+          } else {
+            await signInAnonymously(userAuth);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      onAuthStateChanged(userAuth, (usr) => {
+        if (usr) setUserId(usr.uid);
+        else authenticate();
+      });
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+    }
+  }, []);
+
+  // ------------------------------
+  // Load Firestore Data
+  // ------------------------------
+  useEffect(() => {
+    if (!db || !userId) return;
+
+    const ref = doc(db, "artifacts", appId, "users", userId, "jlpt", "data");
+
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setChecklist(snap.data().tasks);
+      } else {
+        runWithRetry(() => setDoc(ref, { tasks: initialChecklist }));
+      }
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [db, userId]);
+
+  // ------------------------------
+  // Toggle Task
+  // ------------------------------
+  const toggleTask = async (dayIndex, taskIndex) => {
+    if (!db || !userId) return;
+
+    const ref = doc(db, "artifacts", appId, "users", userId, "jlpt", "data");
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.data();
+
+      const copy = [...data.tasks];
+      copy[dayIndex].tasks[taskIndex].isCompleted =
+        !copy[dayIndex].tasks[taskIndex].isCompleted;
+
+      tx.set(ref, { tasks: copy });
+    });
+  };
+
+  // ------------------------------
+  // Reset Checklist
+  // ------------------------------
+  const resetChecklist = async () => {
+    if (!db || !userId) return;
+    const ref = doc(db, "artifacts", appId, "users", userId, "jlpt", "data");
+    await setDoc(ref, { tasks: initialChecklist });
+  };
+
+  // Progress
+  const totalTasks = initialChecklist.reduce((a, b) => a + b.tasks.length, 0);
+  const completedTasks = checklist.reduce(
+    (a, b) => a + b.tasks.filter((t) => t.isCompleted).length,
+    0
+  );
+  const percent = Math.round((completedTasks / totalTasks) * 100);
+
+  if (loading)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-600" />
+      </div>
+    );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-3xl mx-auto bg-white rounded-3xl shadow-xl p-8">
+
+        {/* Tabs */}
+        <div className="flex space-x-4 border-b pb-2 mb-6">
+          <button
+            onClick={() => setView("checklist")}
+            className={
+              "pb-2 font-semibold " +
+              (view === "checklist" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-gray-500")
+            }
+          >
+            <ListChecks className="inline mr-1" />
+            Checklist
+          </button>
+
+          <button
+            onClick={() => setView("flashcards")}
+            className={
+              "pb-2 font-semibold " +
+              (view === "flashcards" ? "text-indigo-600 border-b-2 border-indigo-600" : "text-gray-500")
+            }
+          >
+            <BookOpen className="inline mr-1" />
+            Flashcards
+          </button>
+        </div>
+
+        {/* CONTENT */}
+        {view === "checklist" ? (
+          <ChecklistView
+            checklist={checklist}
+            total={totalTasks}
+            completed={completedTasks}
+            percent={percent}
+            toggleTask={toggleTask}
+            resetChecklist={resetChecklist}
+            userId={userId}
+          />
+        ) : (
+          <Flashcard />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;
